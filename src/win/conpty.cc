@@ -14,7 +14,9 @@
   #define _WIN32_WINNT 0x600
 #endif
 
+#include <codecvt>
 #include <iostream>
+#include <locale>
 #include <nan.h>
 #include <Shlwapi.h> // PathCombine, PathIsRelative
 #include <sstream>
@@ -157,6 +159,12 @@ HRESULT CreateNamedPipesAndPseudoConsole(COORD size,
   return HRESULT_FROM_WIN32(GetLastError());
 }
 
+std::string from_wstring(const std::wstring &wstr) {
+  // https://stackoverflow.com/a/18374698
+  std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
+  return converter.to_bytes(wstr);
+}
+
 static NAN_METHOD(PtyStartProcess) {
   Nan::HandleScope scope;
 
@@ -178,8 +186,8 @@ static NAN_METHOD(PtyStartProcess) {
   }
 
   const std::wstring filename(path_util::to_wstring(Nan::Utf8String(info[0])));
-  const SHORT cols = info[1]->Uint32Value(Nan::GetCurrentContext()).FromJust();
-  const SHORT rows = info[2]->Uint32Value(Nan::GetCurrentContext()).FromJust();
+  const SHORT cols = static_cast<SHORT>(info[1]->Uint32Value(Nan::GetCurrentContext()).FromJust());
+  const SHORT rows = static_cast<SHORT>(info[2]->Uint32Value(Nan::GetCurrentContext()).FromJust());
   const bool debug = Nan::To<bool>(info[3]).FromJust();
   const std::wstring pipeName(path_util::to_wstring(Nan::Utf8String(info[4])));
   const bool inheritCursor = Nan::To<bool>(info[5]).FromJust();
@@ -193,11 +201,9 @@ static NAN_METHOD(PtyStartProcess) {
     shellpath = filename;
   }
 
-  std::string shellpath_(shellpath.begin(), shellpath.end());
-
   if (shellpath.empty() || !path_util::file_exists(shellpath)) {
     std::stringstream why;
-    why << "File not found: " << shellpath_;
+    why << "File not found: " << from_wstring(shellpath);
     Nan::ThrowError(why.str().c_str());
     return;
   }
@@ -223,13 +229,8 @@ static NAN_METHOD(PtyStartProcess) {
   }
 
   Nan::Set(marshal, Nan::New<v8::String>("fd").ToLocalChecked(), Nan::New<v8::Number>(-1));
-  {
-    std::string coninPipeNameStr(inName.begin(), inName.end());
-    Nan::Set(marshal, Nan::New<v8::String>("conin").ToLocalChecked(), Nan::New<v8::String>(coninPipeNameStr).ToLocalChecked());
-
-    std::string conoutPipeNameStr(outName.begin(), outName.end());
-    Nan::Set(marshal, Nan::New<v8::String>("conout").ToLocalChecked(), Nan::New<v8::String>(conoutPipeNameStr).ToLocalChecked());
-  }
+  Nan::Set(marshal, Nan::New<v8::String>("conin").ToLocalChecked(), Nan::New<v8::String>(from_wstring(inName)).ToLocalChecked());
+  Nan::Set(marshal, Nan::New<v8::String>("conout").ToLocalChecked(), Nan::New<v8::String>(from_wstring(outName)).ToLocalChecked());
   info.GetReturnValue().Set(marshal);
 }
 
@@ -395,8 +396,8 @@ static NAN_METHOD(PtyResize) {
   }
 
   int id = info[0]->Int32Value(Nan::GetCurrentContext()).FromJust();
-  SHORT cols = info[1]->Uint32Value(Nan::GetCurrentContext()).FromJust();
-  SHORT rows = info[2]->Uint32Value(Nan::GetCurrentContext()).FromJust();
+  SHORT cols = static_cast<SHORT>(info[1]->Uint32Value(Nan::GetCurrentContext()).FromJust());
+  SHORT rows = static_cast<SHORT>(info[2]->Uint32Value(Nan::GetCurrentContext()).FromJust());
 
   const pty_baton* handle = get_pty_baton(id);
 
